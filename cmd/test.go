@@ -1,12 +1,14 @@
 package main
 
 import (
-	"ConvertedTempProcessor/pkg" // Import the temp package
+	 // Import the temp package
 	"fmt"
+	
 )
 
 func main() {
-	processor := temp.NewXpertTempCheckProcessor()
-	processor.Start(false)
+	//dont know how to import the temp package
+	//processor := temp.NewXpertTempCheckProcessor()
+	//processor.Start(false)
 	fmt.Println("test")
 }

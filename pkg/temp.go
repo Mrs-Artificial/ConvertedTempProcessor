@@ -8,14 +8,9 @@ import (
 	"strconv"
 	_ "github.com/denisenkom/go-mssqldb"
 
-	_ "github.com/go-sql-driver/mysql"
-	"github.com/jmoiron/sqlx"
+	core "Sofia/XpertCore"
 	
 )
-
-var db *sqlx.DB
-var err error	
-
 
 //post
 type XpertMethodStatus int
@@ -33,6 +28,7 @@ type XpertEventService struct {}
 
 func (service *XpertEventService) CloseEvent(customerID int, eventID int) *XpertResultObject {
 	// Implement CloseEvent stored procedure call
+	core.CurrentTime() //test for core
 	return &XpertResultObject{}
 }
 
