@@ -1,14 +1,16 @@
 package main
 
 import (
-	 // Import the temp package
-	"fmt"
-	
+	"airista.com/ConvertedTempProcessor/pkg" // Import the pkg package
 )
 
 func main() {
-	//dont know how to import the temp package
-	//processor := temp.NewXpertTempCheckProcessor()
-	//processor.Start(false)
-	fmt.Println("test")
+	// Initialize the processor
+	processor := pkg.NewXpertTempCheckProcessor()
+
+	// Start the processor
+	processor.Start(false)
+
+	// Keep the main function running
+	select {}
 }

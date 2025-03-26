@@ -1,4 +1,4 @@
-module test.go
+module airista.com/ConvertedTempProcessor
 
 go 1.23.3
 

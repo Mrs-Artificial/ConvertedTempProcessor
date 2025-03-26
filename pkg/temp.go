@@ -1,4 +1,4 @@
-package temp
+package pkg
 
 import (
 	"encoding/json"
@@ -810,10 +810,4 @@ type Infrastructure struct {
 	Name string
 }
 
-func main() {
-	processor := NewXpertTempCheckProcessor()
-	processor.Start(false)
 
-	// Keep the main function running
-	select {}
-}
