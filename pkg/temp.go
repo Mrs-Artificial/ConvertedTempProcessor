@@ -1,277 +1,501 @@
 package temp
 
 import (
-	"log"
-	"time"
+	"encoding/json"
 	"fmt"
-	"strings"
+	"io"
+	"log"
+	"net/http"
 	"strconv"
+	"strings"
+	"time"
+
+	"github.com/beevik/etree"
 	_ "github.com/denisenkom/go-mssqldb"
 
-	core "Sofia/XpertCore"
-	
+	// XpertCore from XpertSofia
+	"XpertRestApi-V8/api/customer"
+	"XpertRestApi-V8/api/events"
+
+	"XpertRestApi-V8/api/metaData"
+	"XpertRestApi-V8/api/settings"
 )
 
-//post
+// XpertMethodStatus represents the status of a method execution
 type XpertMethodStatus int
 
 const (
 	NotSuccessful XpertMethodStatus = iota
 	Successful
+	// ReadConfiguration reads the configuration settings for the processor
+	SETTING_TEMP_CHECK_TIMER       = "TempCheckTimer"
+	SETTING_WEBSOCKET_TOPIC_NAME   = "WebSocketTopic"
+	SETTING_PROXIMITY_SECONDS      = "ProximitySeconds" // Added missing constant
+	SETTING_STATUS_SECONDS         = "StatusSeconds"    // Added missing constant
+	DEFAULT_PROXIMITY_SECONDS      = 3600               // Default value in seconds
+	DEFAULT_STATUS_SECONDS         = 3600               // Default value in seconds
+	
 )
 
 // Placeholder for XpertMQTTClientProducer
-type XpertMQTTClientProducer struct {}
-
-// Placeholder for XpertEventService
-type XpertEventService struct {}
-
-func (service *XpertEventService) CloseEvent(customerID int, eventID int) *XpertResultObject {
-	// Implement CloseEvent stored procedure call
-	core.CurrentTime() //test for core
-	return &XpertResultObject{}
-}
-
-func (service *XpertEventService) InsertEvent(event *XpertEventModel) *XpertResultObject {
-	// Implement InsertEvent stored procedure call
-	return &XpertResultObject{}
-}
-
-func (service *XpertEventService) InsertEventAction(action *XpertEventActionModel) *XpertResultObject {
-	// Implement InsertEventAction stored procedure call
-	return &XpertResultObject{}
-}
-
-func (service *XpertEventService) UpdateEvent(event *XpertEventModel) *XpertResultObject {
-	// Implement UpdateEvent stored procedure call
-	return &XpertResultObject{}
-}
-
-// Placeholder for XpertCustomerService
-type XpertCustomerService struct {}
-
-func (service *XpertCustomerService) GetAllCustomers(param int) *XpertCustomersModel {
-	// Implement GetAllCustomers stored procedure call
-	return &XpertCustomersModel{}
-}
-
-// Placeholder for XpertMetaDataService
-type XpertMetaDataService struct {}
-
-func (service *XpertMetaDataService) GetGroupsResponsibleFor(param1 int, param2 int) *XpertGroupsModel {
-	// Implement GetGroupsResponsibleFor stored procedure call
-	return &XpertGroupsModel{}
-}
-
-func (service *XpertMetaDataService) GetTemperatureCheckpoints(param1, param2, param3, param4 int, param5, param6 time.Time, param7 int) *XpertTemperatureCheckpointsModel {
-	// Implement GetTemperatureCheckpoints stored procedure call
-	return &XpertTemperatureCheckpointsModel{}
-}
-
-func (service *XpertMetaDataService) UpdateTemperatureCheckpoint(param1 int, param2 string, param3 int) {
-	// Implement UpdateTemperatureCheckpoint stored procedure call
-}
-
-func (service *XpertMetaDataService) CreateTemperatureCheckpoint(param1, param2 int, param3 bool, param4 string, param5 int) {
-	// Implement CreateTemperatureCheckpoint stored procedure call
-}
-
-// Placeholder for XpertStaffService
-type XpertStaffService struct {}
-
-func (service *XpertStaffService) GetStaffPersonById(customerID, itemID int) *XpertStaffPersonModel {
-	// Implement GetStaffPersonById stored procedure call
-	return &XpertStaffPersonModel{}
-}
-
-// Placeholder for XpertDeviceService
-type XpertDeviceService struct {}
-
-func (service *XpertDeviceService) GetDevice(customerID, deviceID int) *XpertDeviceModel {
-	// Implement GetDevice stored procedure call
-	return &XpertDeviceModel{}
-}
-
-func (service *XpertDeviceService) GetConfiguration(customerID, configID int) *Configuration {
-	// Implement GetConfiguration stored procedure call
-	return &Configuration{}
-}
-
-func (service *XpertDeviceService) GetDevicesByPendingTempConfig(param int) *XpertDevicesModel {
-	// Implement GetDevicesByPendingTempConfig stored procedure call
-	return &XpertDevicesModel{}
-}
-
-func (service *XpertDeviceService) SetDeviceConfigs(devices *XpertDevicesModel, pendingConfigID, param3, customerID int) {
-	// Implement SetDeviceConfigs stored procedure call
-}
-
-// Placeholder for XpertSettingsService
-type XpertSettingsService struct {}
-
-func (service *XpertSettingsService) GetNotificationSettingsForSDCT(customerID int, param string) *XpertSDCTSettingModel {
-	// Implement GetNotificationSettingsForSDCT stored procedure call
-	return &XpertSDCTSettingModel{}
-}
+type XpertMQTTClientProducer struct{}
 
 // Placeholder for XpertEmailLibrary
-type XpertEmailLibrary struct {}
+type XpertEmailLibrary struct{}
 
-func (library *XpertEmailLibrary) SendEmail_Advanced(emails, details, description string, uris []string, contentType, priority int) bool {
-	// Implement SendEmail_Advanced function
-	return true
+// SendEmailAdvanced sends an email with the given parameters and returns a success status
+func (lib *XpertEmailLibrary) SendEmailAdvanced(to, subject, body string, uris []string, contentType, priority string) bool {
+	// Placeholder implementation for sending email
+	log.Printf("Sending email to: %s, Subject: %s, Body: %s, URIs: %v, ContentType: %s, Priority: %s",
+		to, subject, body, uris, contentType, priority)
+	return true 
 }
 
-type XpertTempCheckProcessor struct {
-	IsHealthy       bool
-	IsTestMode      bool
-	ProximitySeconds int
-	TempCheckTimer  int
-	StatusSeconds   int
-	WebSocketTopic  string
-	MProducer       *XpertMQTTClientProducer
-}
-//post
+//added as a placeholder
 type XpertUserModel struct {
 	Email string
-	Name  string
 }
 
-type XpertResultObject struct {
-	ErrorMessage string
-	HasError     bool
+// SendEmail sends an email to a list of users and logs the process
+func (processor *XpertTempCheckProcessor) SendEmail(users []XpertUserModel, details, description string, eventID int, deviceMac string, oDebugMsg *XpertDebugMessageJsonObject) XpertMethodStatus {
+	const METHOD_NAME = "SendEmail"
+	log.Printf("%s XpertTempCheckProcessor <> %s UsersCnt: %d", deviceMac, METHOD_NAME, len(users))
+
+	// Add debug property for user count
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Error in %s: %v", METHOD_NAME, r)
+		}
+	}()
+	oDebugMsg.AddProperty("User Count", fmt.Sprintf("%d", len(users)))
+
+	result := NotSuccessful
+
+	// Validate users
+	if len(users) <= 0 {
+		log.Printf("Error: Invalid parameter value in %s: emailTo is null or empty", METHOD_NAME)
+		return result
+	}
+
+	// Initialize email library
+	oEmailLibrary := &XpertEmailLibrary{}
+
+	// Collect email addresses
+	var emails []string
+	for _, user := range users {
+		if user.Email != "" {
+			emails = append(emails, user.Email)
+		}
+	}
+
+	oDebugMsg.AddProperty("Email List", strings.Join(emails, ","))
+
+	sendEmailResult := oEmailLibrary.SendEmailAdvanced(
+		strings.Join(emails, ","),
+		details,
+		description,
+		[]string{}, // URIs
+		"HTML",     // Message content type
+		"Normal",   // Message priority
+	)
+
+	if !sendEmailResult {
+		log.Printf("%s XpertTempCheckProcessor <> %s Email Sent Failed", deviceMac, METHOD_NAME)
+		oDebugMsg.AddProperty("Email Status", "Not Sent")
+		log.Printf("Error: Failed to send email in %s", METHOD_NAME)
+		return result
+	}
+
+	// Add debug property for email status
+	oDebugMsg.AddProperty("Email Status", "Sent")
+
+	// Create item event action
+	createItemEventActionResult := processor.CreateItemEventAction(eventID, "Email Sent", fmt.Sprintf("Email sent to: %d", len(emails)))
+	if createItemEventActionResult != Successful {
+		oDebugMsg.AddProperty("Action Status", "Not Sent")
+		log.Printf("Error: Failed to create item event action in %s", METHOD_NAME)
+		return result
+	}
+
+
+	oDebugMsg.AddProperty("Action Status", "Sent")
+
+	result = Successful
+	log.Printf("Exiting method: %s", METHOD_NAME)
+	return result
 }
 
-type XpertEventModel struct {
-	CustomerId       int
-	SystemName       string
-	Description      string
-	MinValue         int
-	MaxValue         int
-	StartDateTime    time.Time
-	EndDateTime      time.Time
-	DateUpdated      time.Time
-	DateCreated      time.Time
-	ClosedDateTime   time.Time
-	AllowedValueRange string
-	PlanId           int
-	DeviceId         int
-	DateTimeToBeArchived time.Time
-	UseCase          int
-	ViolationValue   string
-	Name             string
-	DisplayName      string
-	RuleName         string
-	ItemId           int
-	//post
-	Details          string
-}
-
-type XpertEventActionModel struct {
-	ItemEventId     int
-	ActionTypeId    int
-	ActionType      string
-	ActionDateTime  time.Time
-	Description     string
-	ActionUserId    int
-	DateCreated     time.Time
-	DateUpdated     time.Time
-}
-
-type XpertStaffPersonModel struct {
-	EnableAlerts bool
-	Name         string
-	DeviceID     int
-	Id           int
-	CustomerId   int
-}
-
-type XpertCustomersModel struct {
-	List []XpertCustomerModel
-}
-
-type XpertCustomerModel struct {
-	Id int
-}
-
-type XpertGroupsModel struct {
-	List []XpertGroupModel
-}
-
-type XpertGroupModel struct {
-	Id             int
-	CheckTimeFrames string
-}
-
-type XpertTemperatureCheckpointsModel struct {
-	List []XpertTemperatureCheckpointModel
-}
-
-type XpertTemperatureCheckpointModel struct {
-	DateCreated time.Time
-	Compliance  string
-}
-
-type Configuration struct {
-	ConfigDef string
-}
-
-type XpertSDCTSettingModel struct {
-	SettingJson string
-}
-
-type XpertDeviceModel struct {
-	ModelName       string
-	UniqueId        string
-	PendingConfigId int
-	ConfigId        int
-	CustomerId      int
-	IntegrationConfigId int
-	Devices []XpertDeviceModel
-}
-
-type XpertDevicesModel struct {
-	List []XpertDeviceModel
-}
-
-type InfraCounts struct {
-	InfraId int
-	Count   int
-}
-
-//post
+// XpertDebugMessageJsonObject represents a debug message object with properties, placeholder
 type XpertDebugMessageJsonObject struct {
-	Message string
+	Properties []DebugProperty
 }
 
-//post
-type XpertUseCaseModel struct {
-	UseCase   string
-	UseCaseId int
+// DebugProperty represents a single debug property, placeholder
+type DebugProperty struct {
+	IsList bool
+	Name   string
+	Value  string
 }
 
-type XpertInfrastructureModel struct {
-	//post
-	Id   int
-	Name string
+// AddProperty adds a debug property to the debug message object
+func (oDebugMsg *XpertDebugMessageJsonObject) AddProperty(name, value string) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Error adding property %s: %v", name, r)
+		}
+	}()
+	oDebugMsg.Properties = append(oDebugMsg.Properties, DebugProperty{
+		IsList: false,
+		Name:   name,
+		Value:  value,
+	})
 }
 
+// XpertTempCheckProcessor represents the temperature check processor
+type XpertTempCheckProcessor struct {
+	HealthStatus     bool
+	IsTestMode       bool
+	ProximitySeconds int
+	TempCheckTimer   int
+	StatusSeconds    int
+	WebSocketTopic   string
+	MProducer        *XpertMQTTClientProducer
+}
+
+// NewXpertTempCheckProcessor initializes a new instance of XpertTempCheckProcessor
 func NewXpertTempCheckProcessor() *XpertTempCheckProcessor {
 	return &XpertTempCheckProcessor{
-		IsHealthy: true,
+		HealthStatus:     true,
+		IsTestMode:       false,
+		ProximitySeconds: 3600, // Default value
+		TempCheckTimer:   1000, // Default value in milliseconds
+		StatusSeconds:    3600, // Default value
+		WebSocketTopic:   "",
+		MProducer:        nil,
 	}
 }
 
-func (processor *XpertTempCheckProcessor) CloseEvent(eventID int, oEventService *XpertEventService, customerID int) *XpertResultObject {
-	return oEventService.CloseEvent(customerID, eventID)
+// CheckTempCheckpoints checks temperature checkpoints using the metaData API
+func (processor *XpertTempCheckProcessor) CheckTempCheckpoints() {
+	offset := int(time.Now().UTC().Hour() - time.Now().Hour()) // Corrected offset calculation
+	oCustomers := customer.GetAllCustomers()
+
+	for _, customer := range oCustomers.List {
+		oGroups := metaData.GetGroupsResponsibleFor(0, customer.ID)
+		for _, group := range oGroups.List {
+			if group.CheckTimeFrames == "" {
+				continue
+			}
+			groupTimeFrames := strings.Split(group.CheckTimeFrames, ";")
+			oTempChecks := metaData.GetTemperatureCheckpoints(0, group.ID, 1, 100, time.Now().AddDate(0, 0, -1), time.Now(), customer.ID)
+			for _, timeframe := range groupTimeFrames {
+				timeframeParts := strings.Split(timeframe, ",")
+				startHour, _ := strconv.Atoi(strings.Split(timeframeParts[0], ":")[0])
+				startMinute, _ := strconv.Atoi(strings.Split(timeframeParts[0], ":")[1])
+				endHour, _ := strconv.Atoi(strings.Split(timeframeParts[1], ":")[0])
+				endMinute, _ := strconv.Atoi(strings.Split(timeframeParts[1], ":")[1])
+				startDateTime := time.Date(time.Now().Year(), time.Now().Month(), time.Now().Day(), startHour-offset, startMinute, 0, 0, time.UTC)
+				endDateTime := time.Date(time.Now().Year(), time.Now().Month(), time.Now().Day(), endHour-offset, endMinute, 0, 0, time.UTC)
+
+				checkPerformed := false
+				for _, tempCheck := range oTempChecks.List {
+					if tempCheck.DateCreated.After(startDateTime) && tempCheck.DateCreated.Before(endDateTime) {
+						checkPerformed = true
+						break
+					}
+				}
+
+				if checkPerformed {
+					for _, tempCheck := range oTempChecks.List {
+						if tempCheck.DateCreated.After(startDateTime) && tempCheck.DateCreated.Before(endDateTime) && tempCheck.Compliance == "" {
+							metaData.UpdateTemperatureCheckpoint(group.ID, "check", customer.ID)
+							break
+						}
+					}
+				} else if !checkPerformed && time.Now().After(endDateTime) {
+					var latestTempCheck *metaData.TemperatureCheckpoint
+					for _, tempCheck := range oTempChecks.List {
+						if latestTempCheck == nil || tempCheck.DateCreated.After(latestTempCheck.DateCreated) {
+							latestTempCheck = &tempCheck
+						}
+					}
+					if latestTempCheck == nil || latestTempCheck.Compliance != "miss" {
+						log.Printf("No check found for time range, marking as missed")
+						metaData.CreateTemperatureCheckpoint(0, group.ID, false, "", customer.ID)
+						metaData.UpdateTemperatureCheckpoint(group.ID, "miss", customer.ID)
+					}
+				}
+			}
+		}
+	}
 }
 
-func (processor *XpertTempCheckProcessor) CreateEvent(deviceMac string, oItem *XpertStaffPersonModel,
-	oProximityInfrastructure *XpertInfrastructureModel, routeID int, startDate, endDate time.Time,
-	duration float64, useCase, zoneID int, oEventModel *XpertEventModel, details string, oEventService *XpertEventService) *XpertResultObject {
+// InfraCounts represents the infrastructure ID and its visit count
+type InfraCounts struct {
+	InfraID int
+	Count   int
+}
+
+// XpertUseCaseModel represents a use case with its name and ID, placehplder
+type XpertUseCaseModel struct {
+	UseCase   string
+	UseCaseID int
+}
+
+// CheckAllInfrasVisited checks if all infrastructures in a route have been visited the required number of times
+func CheckAllInfrasVisited(routeDef map[string]interface{}, numVisits int, allVisits []events.XpertEventModel) ([]InfraCounts, []InfraCounts) {
+	const METHOD_NAME = "CheckAllInfrasVisited"
+	log.Printf("Entering method: %s", METHOD_NAME)
+	
+
+	// Initialize unseenInfras and counts
+	unseenInfras := []InfraCounts{}
+	counts := make(map[int]int)
+	infrasInRoute := []int{}
+
+	// Try-catch equivalent in Go using defer and recover
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Error in %s: %v", METHOD_NAME, r)
+		}
+	}()
+
+	// Populate infrasInRoute and counts from routeDef
+	if infrastructures, ok := routeDef["infrastructures"].([]interface{}); ok {
+		for _, infra := range infrastructures {
+			if infraMap, ok := infra.(map[string]interface{}); ok {
+				if id, ok := infraMap["Id"].(float64); ok { // Assuming Id is a float64 in the dynamic structure
+					infraID := int(id)
+					infrasInRoute = append(infrasInRoute, infraID)
+					counts[infraID] = 0
+				}
+			}
+		}
+	}
+
+	// Count visits for each infrastructure
+	for _, visit := range allVisits {
+		if _, exists := counts[visit.PlanID]; exists {
+			counts[visit.PlanID]++
+		} else {
+			counts[visit.PlanID] = 1
+		}
+	}
+
+	// Check if each infrastructure in the route has been visited the required number of times
+	for _, infra := range infrasInRoute {
+		if counts[infra] < numVisits {
+			unseenInfras = append(unseenInfras, InfraCounts{
+				InfraID: infra,
+				Count:   counts[infra],
+			})
+		}
+	}
+
+	log.Printf("Exiting method: %s", METHOD_NAME)
+	return unseenInfras, unseenInfras
+}
+
+// CheckTempGraces checks for temperature grace periods and handles alerts
+func (processor *XpertTempCheckProcessor) CheckTempGraces() {
+	const METHOD_NAME = "CheckTempGraces"
+	log.Printf("Entering method: %s", METHOD_NAME)
+
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Error in %s: %v", METHOD_NAME, r)
+		}
+	}()
+
+	gracePeriodUpdateTime := time.Time{}
+	lastAlertUpdateTime := time.Time{}
+
+	oStaffService := &customer.XpertStaffService{}
+	oEventService := &events.XpertEventService{}
+	oDeviceService := &metaData.XpertDeviceService{}
+	oSettingsService := &settings.XpertSettingsService{}
+
+	oEventModel := events.XpertEventModel{
+		SystemName: "ERROR - must be re-assigned.",
+		Name:       "TemperatureMonitoring",
+	}
+
+	oEvents := oEventService.GetOpenTempEvents("TEMPERATURE_GRACE")
+
+	for _, tempEvent := range oEvents.List {
+		if tempEvent.DeviceID == 0 || tempEvent.CustomerID == 0 {
+			continue
+		}
+
+		oDevice := oDeviceService.GetDevice(tempEvent.CustomerID, tempEvent.DeviceID)
+		if strings.ToLower(oDevice.ModelName) != "ts1" && strings.ToLower(oDevice.ModelName) != "ts2" && strings.ToLower(oDevice.ModelName) == "hs1" {
+			log.Printf("DEVICE TYPE %s NOT HANDLED BY THIS PROCESSOR", oDevice.ModelName)
+			continue
+		}
+
+		gracePeriodUpdateTime = tempEvent.DateUpdated
+		oEventModel.DeviceID = tempEvent.DeviceID
+		oEventModel.CustomerID = tempEvent.CustomerID
+		oEventModel.DeviceUniqueID = oDevice.UniqueID
+
+		var oConfig map[string]interface{}
+		if oDevice.PendingConfigID > 0 {
+			oConfig = oDeviceService.GetConfiguration(oDevice.CustomerID, oDevice.PendingConfigID).ConfigDef
+		} else if oDevice.ConfigID > 0 {
+			oConfig = oDeviceService.GetConfiguration(oDevice.CustomerID, oDevice.ConfigID).ConfigDef
+		} else {
+			continue
+		}
+
+		oSettings := oSettingsService.GetNotificationSettingsForSDCT(tempEvent.CustomerID, "Temp")
+		oSettingsJson := oSettings.SettingJson
+
+		if time.Now().UTC().After(gracePeriodUpdateTime.Add(time.Second * time.Duration(oConfig["hightime1"].(float64)))) {
+			oLastAlertEvent := oEventService.GetEventBySystemName(0, tempEvent.ItemID, "TEMPERATURE_ALERT", false)
+			lastAlertUpdateTime = oLastAlertEvent.DateUpdated
+
+			renotifyPeriod := 999999
+			if repeatInterval, ok := oSettingsJson["RepeatIntervalTimeValue"].(float64); ok {
+				renotifyPeriod = int(repeatInterval)
+				if strings.ToLower(oSettingsJson["RepeatIntervalTimeUnit"].(string)) == "minutes" {
+					renotifyPeriod *= 60
+				} else if strings.ToLower(oSettingsJson["RepeatIntervalTimeUnit"].(string)) == "hours" {
+					renotifyPeriod *= 3600
+				}
+			}
+
+			if time.Now().UTC().After(lastAlertUpdateTime.Add(time.Second * time.Duration(renotifyPeriod))) {
+				oItem := oStaffService.GetStaffPersonByID(tempEvent.CustomerID, oDevice.ItemID)
+				processor.CreateTempEvent(oItem, time.Now().UTC(), time.Now().UTC(), 1, &oEventModel, oEventService, "TEMPERATURE_ALERT",
+					oConfig["lowvalue1"].(float64), oConfig["highvalue1"].(float64), tempEvent.ViolationValue, "Temperature Range Exceeded.", "0")
+			}
+		}
+	}
+
+	log.Printf("Exiting method: %s", METHOD_NAME)
+}
+
+// CreateItemEventAction creates an item event action and returns the method status
+func (processor *XpertTempCheckProcessor) CreateItemEventAction(itemEventID int, actionType, actionDetails string) XpertMethodStatus {
+	const METHOD_NAME = "CreateItemEventAction"
+	log.Printf("Entering method: %s", METHOD_NAME)
+
+	// Default result is NotSuccessful
+	result := NotSuccessful
+
+	// Validate parameters
+	if itemEventID <= 0 {
+		log.Printf("Error: Invalid parameter value in %s: itemEventID is null or invalid", METHOD_NAME)
+		return result
+	}
+
+	if strings.TrimSpace(actionType) == "" {
+		log.Printf("Error: Invalid parameter value in %s: actionType is null or empty", METHOD_NAME)
+		return result
+	}
+
+	if strings.TrimSpace(actionDetails) == "" {
+		log.Printf("Error: Invalid parameter value in %s: actionDetails is null or empty", METHOD_NAME)
+		return result
+	}
+
+	// Create the event action model
+	eventTime := time.Now().UTC()
+	oModel := events.XpertEventActionModel{
+		ItemEventID:    itemEventID,
+		ActionTypeID:   0,
+		ActionType:     actionType,
+		ActionDateTime: eventTime,
+		Description:    actionDetails,
+		ActionUserID:   0,
+		DateCreated:    eventTime,
+		DateUpdated:    eventTime,
+	}
+
+	// Insert the event action using the events API
+	oEventService := &events.XpertEventService{}
+	oResult := oEventService.InsertEventAction(oModel)
+
+	// Check for errors in the result
+	if oResult.HasError {
+		log.Printf("Error: Failed to insert event action in %s", METHOD_NAME)
+		return result
+	}
+
+	// If successful, update the result
+	result = Successful
+
+	log.Printf("Exiting method: %s", METHOD_NAME)
+	return result
+}
+
+// CreateTempEvent creates a new temperature event using the events API
+func (processor *XpertTempCheckProcessor) CreateTempEvent(
+	oItem *settings.StaffPerson,
+	startDate, endDate time.Time,
+	duration float64,
+	oEventModel *events.XpertEventModel,
+	oXpertEventService *events.XpertEventService,
+	systemName string,
+	minValue, maxValue float64,
+	violationValue, description, logPeriod string,
+) *events.ResultObject {
+	const METHOD_NAME = "CreateTempEvent"
+	log.Printf("Entering method: %s", METHOD_NAME)
+
+	result := &events.ResultObject{}
 
 	if !oItem.EnableAlerts {
-		return &XpertResultObject{ErrorMessage: "Item does not have events enabled, alert generation cancelled"}
+		result.ErrorMessage = "Item does not have events enabled, alert generation cancelled"
+		return result
+	}
+
+	oEventModel.StartDateTime = startDate
+	oEventModel.MinValue = minValue
+	oEventModel.MaxValue = maxValue
+	oEventModel.ViolationValue = violationValue
+	oEventModel.Description = description
+	oEventModel.SystemName = systemName
+	oEventModel.Name = description
+	oEventModel.DisplayName = description
+	oEventModel.RuleName = logPeriod
+	oEventModel.EndDateTime = endDate
+	oEventModel.DateUpdated = time.Now().UTC()
+	oEventModel.DateCreated = time.Now().UTC()
+	oEventModel.ItemID = oItem.ID
+	oEventModel.ClosedDateTime = oEventModel.EndDateTime
+	oEventModel.AllowedValueRange = fmt.Sprintf("%f", duration)
+	oEventModel.CustomerID = oItem.CustomerID
+	oEventModel.DateTimeToBeArchived = oEventModel.DateCreated.AddDate(0, 0, 60)
+	oEventModel.UseCase = 6
+
+	if err := oXpertEventService.InsertEvent(oEventModel); err != nil {
+		log.Printf("Error inserting event in %s: %v", METHOD_NAME, err)
+	}
+
+	log.Printf("Exiting method: %s", METHOD_NAME)
+	return result
+}
+
+// CloseEvent closes an event using the events API
+func (processor *XpertTempCheckProcessor) CloseEvent(eventID int, oEventService *events.XpertEventService, customerID int) *events.ResultObject {
+	const METHOD_NAME = "CloseEvent"
+	log.Printf("Entering method: %s", METHOD_NAME)
+
+	// Call the CloseEvent method from the events API
+	result := oEventService.CloseEvent(customerID, eventID)
+
+	log.Printf("Exiting method: %s", METHOD_NAME)
+	return result
+}
+
+// CreateEvent creates a new event using the events API
+func (processor *XpertTempCheckProcessor) CreateEvent(deviceMac string, oItem *settings.StaffPerson,
+	oProximityInfrastructure *metaData.Infrastructure, routeID int, startDate, endDate time.Time,
+	duration float64, useCase, zoneID int, oEventModel *events.Event, details string) *events.ResultObject {
+
+	if !oItem.EnableAlerts {
+		return &events.ResultObject{ErrorMessage: "Item does not have events enabled, alert generation cancelled"} // Ensure ResultObject is defined in the events package
 	}
 
 	oEventModel.Details = details
@@ -288,212 +512,307 @@ func (processor *XpertTempCheckProcessor) CreateEvent(deviceMac string, oItem *X
 	oEventModel.DateCreated = time.Now().UTC()
 	oEventModel.ClosedDateTime = oEventModel.EndDateTime
 	oEventModel.AllowedValueRange = fmt.Sprintf("%f", duration)
-	oEventModel.PlanId = oProximityInfrastructure.Id
-	oEventModel.DeviceId = oItem.DeviceID
+	oEventModel.PlanID = oProximityInfrastructure.ID
+	oEventModel.DeviceID = oItem.DeviceID
 	oEventModel.DateTimeToBeArchived = oEventModel.DateCreated.AddDate(0, 0, 60)
 	oEventModel.UseCase = useCase
 
-	return oEventService.InsertEvent(oEventModel)
+	return events.Insert(oEventModel)
 }
 
-func CreateItemEventAction(itemEventID int, actionType, actionDetails string) XpertMethodStatus {
-	if itemEventID <= 0 {
-		log.Printf("Invalid itemEventID: %d", itemEventID)
-		return NotSuccessful
-	}
+// UpdateEvent updates an existing event using the events API
+func (processor *XpertTempCheckProcessor) UpdateEvent(oEvent *events.XpertEventModel, oEventService *events.XpertEventService) *events.ResultObject {
+	const METHOD_NAME = "UpdateEvent"
+	log.Printf("Entering method: %s", METHOD_NAME)
 
-	if strings.TrimSpace(actionType) == "" {
-		log.Printf("Invalid actionType: %s", actionType)
-		return NotSuccessful
-	}
+	// Call the UpdateEvent method from the events API
+	result := oEventService.UpdateEvent(oEvent)
 
-	if strings.TrimSpace(actionDetails) == "" {
-		log.Printf("Invalid actionDetails: %s", actionDetails)
-		return NotSuccessful
-	}
-
-	eventTime := time.Now().UTC()
-	oModel := &XpertEventActionModel{
-		ItemEventId:    itemEventID,
-		ActionTypeId:   0,
-		ActionType:     actionType,
-		ActionDateTime: eventTime,
-		Description:    actionDetails,
-		ActionUserId:   0,
-		DateCreated:    eventTime,
-		DateUpdated:    eventTime,
-	}
-
-	oEventService := &XpertEventService{}
-	oResult := oEventService.InsertEventAction(oModel)
-	if oResult.HasError {
-		log.Printf("InsertEventAction failed: %v", oResult)
-		return NotSuccessful
-	}
-
-	return Successful
+	log.Printf("Exiting method: %s", METHOD_NAME)
+	return result
 }
 
-func CheckAllInfrasVisited(routeDef interface{}, numVisits int, allVisits []*XpertEventModel) []InfraCounts {
-	var unseenInfras []InfraCounts
+// CheckPendingTempConfigs checks for pending temperature configurations and processes them
+func (processor *XpertTempCheckProcessor) CheckPendingTempConfigs() {
+	const METHOD_NAME = "CheckPendingTempConfigs"
+	log.Printf("Entering method: %s", METHOD_NAME)
 
-	counts := make(map[int]int)
-	infrasInRoute := []int{}
-
-	for _, infra := range routeDef.([]interface{}) {
-		infraID := int(infra.(map[string]interface{})["Id"].(float64))
-		infrasInRoute = append(infrasInRoute, infraID)
-		counts[infraID] = 0
-	}
-
-	for _, visit := range allVisits {
-		if _, exists := counts[visit.PlanId]; exists {
-			counts[visit.PlanId]++
-		} else {
-			counts[visit.PlanId] = 1
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Error in %s: %v", METHOD_NAME, r)
 		}
-	}
+	}()
 
-	for _, infra := range infrasInRoute {
-		if counts[infra] < numVisits {
-			unseenInfras = append(unseenInfras, InfraCounts{InfraId: infra, Count: counts[infra]})
-		}
-	}
+	oDeviceService := &metaData.XpertDeviceService{}
+	oCustService := &customer.XpertCustomerService{}
 
-	return unseenInfras
-}
+	// Get devices with pending temperature configurations
+	oDevices := oDeviceService.GetDevicesByPendingTempConfig(1)
 
-func (processor *XpertTempCheckProcessor) CheckTempCheckpoints() {
-	offset := time.Now().UTC().Sub(time.Now()).Hours()
-	oCustomerService := &XpertCustomerService{}
-	oCustomers := oCustomerService.GetAllCustomers(0)
+	for _, oDevice := range oDevices.List {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("Error processing device %d in %s: %v", oDevice.ID, METHOD_NAME, r)
+				}
+			}()
 
-	for _, customer := range oCustomers.List {
-		oMetaService := &XpertMetaDataService{}
-		oGroups := oMetaService.GetGroupsResponsibleFor(0, customer.Id)
-		for _, group := range oGroups.List {
-			if group.CheckTimeFrames == "" {
-				continue
+			var ipAddress, username, password string
+			cmdMatch := true
+			var oIntegration *customer.XpertIntegrationModel
+
+			// Get integrations for the customer
+			oIntegrations := oCustService.GetIntegrations(oDevice.CustomerID)
+			for _, custInt := range oIntegrations.List {
+				if strings.TrimSpace(strings.ToLower(custInt.Type)) == "arc" {
+					oIntegration = &custInt
+					break
+				}
 			}
-			groupTimeFrames := strings.Split(group.CheckTimeFrames, ";")
-			oTempChecks := oMetaService.GetTemperatureCheckpoints(0, group.Id, 1, 100, time.Now().AddDate(0, 0, -1), time.Now(), customer.Id)
-			for _, timeframe := range groupTimeFrames {
-				timeframeParts := strings.Split(timeframe, ",")
-				startHour, _ := strconv.Atoi(strings.Split(timeframeParts[0], ":")[0])
-				startMinute, _ := strconv.Atoi(strings.Split(timeframeParts[0], ":")[1])
-				endHour, _ := strconv.Atoi(strings.Split(timeframeParts[1], ":")[0])
-				endMinute, _ := strconv.Atoi(strings.Split(timeframeParts[1], ":")[1])
-				startDateTime := time.Date(time.Now().Year(), time.Now().Month(), time.Now().Day(), startHour-int(offset), startMinute, 0, 0, time.UTC)
-				endDateTime := time.Date(time.Now().Year(), time.Now().Month(), time.Now().Day(), endHour-int(offset), endMinute, 0, 0, time.UTC)
 
-				checkPerformed := false
-				for _, tempCheck := range oTempChecks.List {
-					if tempCheck.DateCreated.After(startDateTime) && tempCheck.DateCreated.Before(endDateTime) {
-						checkPerformed = true
+			if oIntegration == nil {
+				log.Printf("No ARC integration found for device %d", oDevice.ID)
+				return
+			}
+
+			// Parse integration JSON
+			var oArcMessage map[string]interface{}
+			if err := json.Unmarshal([]byte(oIntegration.JSON), &oArcMessage); err != nil {
+				log.Printf("Error parsing integration JSON for device %d: %v", oDevice.ID, err)
+				return
+			}
+
+			// Extract IP address, username, and password
+			if ip, ok := oArcMessage["ErcIPAddress"].(string); ok && ip != "" {
+				ipAddress = ip
+			} else if ip, ok := oArcMessage["IPAddress"].(string); ok {
+				ipAddress = ip
+			}
+			if user, ok := oArcMessage["Username"].(string); ok {
+				username = user
+			}
+			if pass, ok := oArcMessage["Password"].(string); ok {
+				password = pass
+			}
+
+			// Check if the associated configuration exists
+			configDef, err := processor.fetchConfig(ipAddress, username, password, oDevice.IntegrationConfigID, "tagconfiglist")
+			if err != nil {
+				log.Printf("Error fetching configuration for device %d: %v", oDevice.ID, err)
+				return
+			}
+
+			// Parse configuration XML to JSON
+			configJSON, err := processor.parseXMLToJSON(configDef)
+			if err != nil {
+				log.Printf("Error parsing configuration XML for device %d: %v", oDevice.ID, err)
+				return
+			}
+
+			// Check if the associated tag commands exist
+			tagCommands, err := processor.fetchConfig(ipAddress, username, password, oDevice.UniqueID, "tagconfigdump")
+			if err != nil {
+				log.Printf("Error fetching tag commands for device %d: %v", oDevice.ID, err)
+				return
+			}
+
+			// Parse tag commands XML to JSON
+			commandJSON, err := processor.parseXMLToJSON(tagCommands)
+			if err != nil {
+				log.Printf("Error parsing tag commands XML for device %d: %v", oDevice.ID, err)
+				return
+			}
+
+			// Compare commands and configurations
+			for _, cmd := range commandJSON["response"].(map[string]interface{})["TAGCONFIG"].(map[string]interface{})["item"].([]interface{}) {
+				found := false
+				for _, config := range configJSON["response"].(map[string]interface{})["CONFIG"].(map[string]interface{})["cmd"].([]interface{}) {
+					if processor.compareCommands(cmd.(string), config.(string)) {
+						found = true
 						break
 					}
 				}
-
-				if checkPerformed {
-					for _, tempCheck := range oTempChecks.List {
-						if tempCheck.DateCreated.After(startDateTime) && tempCheck.DateCreated.Before(endDateTime) && tempCheck.Compliance == "" {
-							oMetaService.UpdateTemperatureCheckpoint(group.Id, "check", customer.Id)
-							break
-						}
-					}
-				} else if !checkPerformed && time.Now().After(endDateTime) {
-					var latestTempCheck *XpertTemperatureCheckpointModel
-					for _, tempCheck := range oTempChecks.List {
-						if latestTempCheck == nil || tempCheck.DateCreated.After(latestTempCheck.DateCreated) {
-							latestTempCheck = &tempCheck
-						}
-					}
-					if latestTempCheck == nil || latestTempCheck.Compliance != "miss" {
-						log.Printf("No check found for time range, marking as missed")
-						oMetaService.CreateTemperatureCheckpoint(0, group.Id, false, "", customer.Id)
-						oMetaService.UpdateTemperatureCheckpoint(group.Id, "miss", customer.Id)
-					}
+				if !found {
+					cmdMatch = false
+					break
 				}
 			}
+
+			// If commands match, set device configurations
+			if cmdMatch {
+				oDeviceService.SetDeviceConfigs([]metaData.XpertDeviceModel{oDevice}, oDevice.PendingConfigID, 0, oDevice.CustomerID)
+			}
+		}()
+	}
+
+	log.Printf("Exiting method: %s", METHOD_NAME)
+}
+
+// GetCustomerUseCases retrieves a list of use cases based on customer applications
+func GetCustomerUseCases(customerApps map[string]bool) []XpertUseCaseModel {
+	const METHOD_NAME = "GetCustomerUseCases"
+	log.Printf("Entering method: %s", METHOD_NAME)
+
+	useCases := []XpertUseCaseModel{}
+
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Error in %s: %v", METHOD_NAME, r)
 		}
-	}
-}
+	}()
 
-func (processor *XpertTempCheckProcessor) CheckTempGraces() {
-	// Implementation of CheckTempGraces
-	// This would involve interactions with various services and handling the grace period logic as in C# code
-}
+	if customerApps["AssetTracking"] {
+		useCases = append(useCases, XpertUseCaseModel{UseCase: "AssetTracking", UseCaseID: 1})
+	}
+	if customerApps["MELT"] {
+		useCases = append(useCases, XpertUseCaseModel{UseCase: "MELT", UseCaseID: 2})
+	}
+	if customerApps["PatientFlow"] {
+		useCases = append(useCases, XpertUseCaseModel{UseCase: "PatientFlow", UseCaseID: 3})
+	}
+	if customerApps["SDCT"] {
+		useCases = append(useCases, XpertUseCaseModel{UseCase: "SDCT", UseCaseID: 4})
+	}
+	if customerApps["StaffSafety"] {
+		useCases = append(useCases, XpertUseCaseModel{UseCase: "StaffSafety", UseCaseID: 5})
+	}
 
-func (processor *XpertTempCheckProcessor) CheckPendingTempConfigs() {
-	// Implementation of CheckPendingTempConfigs
-	// This would involve retrieving pending configurations and validating them as in C# code
-}
-
-func GetCustomerUseCases(customerApps interface{}) []XpertUseCaseModel {
-	var useCases []XpertUseCaseModel
-	if customerApps.(map[string]interface{})["AssetTracking"].(bool) {
-		useCases = append(useCases, XpertUseCaseModel{UseCase: "AssetTracking", UseCaseId: 1})
-	}
-	if customerApps.(map[string]interface{})["MELT"].(bool) {
-		useCases = append(useCases, XpertUseCaseModel{UseCase: "MELT", UseCaseId: 2})
-	}
-	if customerApps.(map[string]interface{})["PatientFlow"].(bool) {
-		useCases = append(useCases, XpertUseCaseModel{UseCase: "PatientFlow", UseCaseId: 3})
-	}
-	if customerApps.(map[string]interface{})["SDCT"].(bool) {
-		useCases = append(useCases, XpertUseCaseModel{UseCase: "SDCT", UseCaseId: 4})
-	}
-	if customerApps.(map[string]interface{})["StaffSafety"].(bool) {
-		useCases = append(useCases, XpertUseCaseModel{UseCase: "StaffSafety", UseCaseId: 5})
-	}
+	log.Printf("Exiting method: %s", METHOD_NAME)
 	return useCases
 }
 
+// IsHealthy checks the health status of the processor
+func (processor *XpertTempCheckProcessor) IsHealthy(diagnosticData string) bool {
+	return processor.HealthStatus
+}
+
+
 func (processor *XpertTempCheckProcessor) ReadConfiguration() {
-	// This involves reading configuration parameters and setting instance variables
+	const METHOD_NAME = "ReadConfiguration"
+	log.Printf("Entering method: %s", METHOD_NAME)
+
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Error in %s: %v", METHOD_NAME, r)
+		}
+	}()
+
+	oConfigReader := NewXpertConfigurationReader()
+	if err := oConfigReader.OpenConfigurationFile(); err != nil {
+		log.Printf("Error opening configuration file: %v", err)
+		return
+	}
+
+	// Read configuration parameters
+	if tempCheckTimer, err := strconv.Atoi(oConfigReader.GetConfigurationParameter(SETTING_TEMP_CHECK_TIMER)); err == nil {
+		processor.TempCheckTimer = tempCheckTimer
+	} else {
+		log.Printf("Error reading TempCheckTimer: %v", err)
+	}
+
+	processor.WebSocketTopic = oConfigReader.GetConfigurationParameter(SETTING_WEBSOCKET_TOPIC_NAME)
+
+	if proximitySeconds, err := strconv.Atoi(oConfigReader.GetConfigurationParameter(SETTING_PROXIMITY_SECONDS)); err == nil {
+		processor.ProximitySeconds = proximitySeconds
+	} else {
+		processor.ProximitySeconds = DEFAULT_PROXIMITY_SECONDS
+	}
+
+	if statusSeconds, err := strconv.Atoi(oConfigReader.GetConfigurationParameter(SETTING_STATUS_SECONDS)); err == nil {
+		processor.StatusSeconds = statusSeconds
+	} else {
+		processor.StatusSeconds = DEFAULT_STATUS_SECONDS
+	}
+
+	log.Printf("Exiting method: %s", METHOD_NAME)
 }
 
-func (processor *XpertTempCheckProcessor) SendEmail(users []*XpertUserModel, details, description string, eventID int, deviceMac string, oDebugMsg *XpertDebugMessageJsonObject) XpertMethodStatus {
-	// Implementation of SendEmail
-	// This involves sending an email and creating an item event action as in C# code
-	return Successful
+// fetchConfig fetches configuration or tag commands from the specified URI
+func (processor *XpertTempCheckProcessor) fetchConfig(ipAddress, username, password string, id interface{}, endpoint string) (string, error) {
+	uri := fmt.Sprintf("%s/epe/cfg/%s?configid=%v", ipAddress, endpoint, id)
+	req, err := http.NewRequest("GET", uri, nil)
+	if err != nil {
+		return "", err
+	}
+	req.SetBasicAuth(username, password)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("received non-OK HTTP status: %s", resp.Status)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	return string(body), nil
 }
 
+// parseXMLToJSON parses an XML string into a JSON object
+func (processor *XpertTempCheckProcessor) parseXMLToJSON(xmlData string) (map[string]interface{}, error) {
+	if xmlData == "" {
+		return nil, fmt.Errorf("xmlData is empty")
+	}
+
+	var jsonData map[string]interface{}
+	doc := etree.NewDocument()
+	if err := doc.ReadFromString(xmlData); err != nil {
+		return nil, err
+	}
+	jsonBytes, err := json.Marshal(doc.Root())
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(jsonBytes, &jsonData); err != nil {
+		return nil, err
+	}
+	return jsonData, nil
+}
+
+// compareCommands compares two commands for equivalence
+func (processor *XpertTempCheckProcessor) compareCommands(cmd, config string) bool {
+	// Example logic: Compare trimmed strings
+	return strings.TrimSpace(cmd) == strings.TrimSpace(config)
+}
+
+// Start initializes the processor and starts the main loop
 func (processor *XpertTempCheckProcessor) Start(isTestMode bool) bool {
 	processor.ReadConfiguration()
 
-	timer := time.NewTicker(time.Duration(processor.TempCheckTimer) * time.Millisecond)
+	if processor.TempCheckTimer <= 0 {
+		log.Printf("Invalid TempCheckTimer value: %d", processor.TempCheckTimer)
+		return false
+	}
 
+	timer := time.NewTicker(time.Duration(processor.TempCheckTimer) * time.Millisecond)
 	processor.MProducer = &XpertMQTTClientProducer{}
 
 	go func() {
 		for range timer.C {
-			processor.CheckTempGraces()
-			processor.CheckPendingTempConfigs()
 			processor.CheckTempCheckpoints()
 		}
 	}()
 
+	log.Println("Processor started successfully.")
 	return true
 }
 
-func (processor *XpertTempCheckProcessor) StartMainThread() {
-	processor.Start(false)
-}
-
-func (processor *XpertTempCheckProcessor) StopMainThread() {
-	// Implementation of StopMainThread
-	// This involves stopping the main thread and cleaning up resources
-}
-
-func TaskSchedulerOnUnobservedTaskException() {
-	// Implementation of TaskSchedulerOnUnobservedTaskException
-	// This involves handling unobserved task exceptions as in C# code
+// Infrastructure represents a proximity infrastructure
+type Infrastructure struct {
+	ID   int
+	Name string
 }
 
 func main() {
 	processor := NewXpertTempCheckProcessor()
-	processor.StartMainThread()
+	processor.Start(false)
 
 	// Keep the main function running
 	select {}
